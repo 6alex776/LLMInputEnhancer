@@ -6,11 +6,16 @@
 from __future__ import annotations
 
 import re
+import time
 from typing import Any
 
 import httpx
 
+from app_logger import get_logger
 from config import ConfigManager
+
+
+logger = get_logger("llm")
 
 
 class LLMClientError(RuntimeError):
@@ -98,6 +103,8 @@ class LLMClient:
         context: str = "",
     ) -> str:
         """同步生成接口（MVP 主入口）。"""
+        logger.info("开始执行模型任务：task=%s input_length=%s", task_type, len(text))
+
         if task_type == "translate":
             messages = self._build_translate_messages(text)
         else:
@@ -106,9 +113,11 @@ class LLMClient:
                 {"role": "user", "content": self._user_prompt(text, context)},
             ]
 
-        result = self._call_local_sync(messages, self.config_manager.all())
+        result = self._call_local_sync(messages, self.config_manager.all(), task_type)
         if task_type == "translate":
             self._validate_translation_result(text, result)
+
+        logger.info("模型任务完成：task=%s output_length=%s", task_type, len(result))
         return result
 
     async def generate_async(
@@ -119,6 +128,8 @@ class LLMClient:
         context: str = "",
     ) -> str:
         """异步生成接口，便于后续扩展异步调用。"""
+        logger.info("开始执行异步模型任务：task=%s input_length=%s", task_type, len(text))
+
         if task_type == "translate":
             messages = self._build_translate_messages(text)
         else:
@@ -127,9 +138,11 @@ class LLMClient:
                 {"role": "user", "content": self._user_prompt(text, context)},
             ]
 
-        result = await self._call_local_async(messages, self.config_manager.all())
+        result = await self._call_local_async(messages, self.config_manager.all(), task_type)
         if task_type == "translate":
             self._validate_translation_result(text, result)
+
+        logger.info("异步模型任务完成：task=%s output_length=%s", task_type, len(result))
         return result
 
     def stream_generate(
@@ -142,7 +155,12 @@ class LLMClient:
         """预留流式接口，MVP 暂不实现流式解析。"""
         raise NotImplementedError("已预留流式输出接口，当前 MVP 版本使用全量输出。")
 
-    def _call_local_sync(self, messages: list[dict[str, str]], config: dict[str, Any]) -> str:
+    def _call_local_sync(
+        self,
+        messages: list[dict[str, str]],
+        config: dict[str, Any],
+        task_type: str,
+    ) -> str:
         """同步调用本地 llama-server(OpenAI 兼容接口)。"""
         base_url = str(config.get("local_url", "http://127.0.0.1:8080/")).rstrip("/")
         model = str(config.get("local_model", "")).strip()
@@ -158,26 +176,49 @@ class LLMClient:
             "stream": False,
         }
         timeout = httpx.Timeout(60.0)
+        started_at = time.perf_counter()
+
+        logger.info("发起本地模型请求：task=%s model=%s endpoint=%s", task_type, model, endpoint)
 
         try:
             with httpx.Client(timeout=timeout) as client:
                 response = client.post(endpoint, json=payload)
                 response.raise_for_status()
                 data = response.json()
+
+            elapsed_ms = int((time.perf_counter() - started_at) * 1000)
+            logger.info("本地模型响应成功：task=%s status=%s elapsed_ms=%s", task_type, 200, elapsed_ms)
             return self._parse_chat_completion(data)
         except httpx.ConnectError as exc:
+            logger.exception("连接本地 llama-server 失败：endpoint=%s", endpoint)
             raise LLMClientError("无法连接本地 llama-server，请确认服务已启动且地址可访问。") from exc
         except httpx.TimeoutException as exc:
+            logger.exception("本地模型请求超时：task=%s endpoint=%s", task_type, endpoint)
             raise LLMClientError("本地模型请求超时（60秒），请检查模型负载或机器性能。") from exc
         except httpx.HTTPStatusError as exc:
             detail = exc.response.text[:300] if exc.response is not None else ""
-            raise LLMClientError(f"本地接口返回错误：HTTP {exc.response.status_code} {detail}") from exc
+            logger.exception(
+                "本地模型返回 HTTP 错误：task=%s status=%s detail=%s",
+                task_type,
+                exc.response.status_code if exc.response is not None else "unknown",
+                detail,
+            )
+            raise LLMClientError(
+                f"本地接口返回错误：HTTP {exc.response.status_code} {detail}"
+            ) from exc
         except httpx.HTTPError as exc:
+            logger.exception("本地模型请求失败：task=%s endpoint=%s", task_type, endpoint)
             raise LLMClientError(f"本地请求失败：{exc}") from exc
         except Exception as exc:
+            logger.exception("本地模型响应解析失败：task=%s", task_type)
             raise LLMClientError(f"本地响应解析失败：{exc}") from exc
 
-    async def _call_local_async(self, messages: list[dict[str, str]], config: dict[str, Any]) -> str:
+    async def _call_local_async(
+        self,
+        messages: list[dict[str, str]],
+        config: dict[str, Any],
+        task_type: str,
+    ) -> str:
         """异步调用本地 llama-server(OpenAI 兼容接口)。"""
         base_url = str(config.get("local_url", "http://127.0.0.1:8080/")).rstrip("/")
         model = str(config.get("local_model", "")).strip()
@@ -193,23 +234,41 @@ class LLMClient:
             "stream": False,
         }
         timeout = httpx.Timeout(60.0)
+        started_at = time.perf_counter()
+
+        logger.info("发起异步本地模型请求：task=%s model=%s endpoint=%s", task_type, model, endpoint)
 
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:
                 response = await client.post(endpoint, json=payload)
                 response.raise_for_status()
                 data = response.json()
+
+            elapsed_ms = int((time.perf_counter() - started_at) * 1000)
+            logger.info("异步本地模型响应成功：task=%s status=%s elapsed_ms=%s", task_type, 200, elapsed_ms)
             return self._parse_chat_completion(data)
         except httpx.ConnectError as exc:
+            logger.exception("连接异步本地 llama-server 失败：endpoint=%s", endpoint)
             raise LLMClientError("无法连接本地 llama-server，请确认服务已启动且地址可访问。") from exc
         except httpx.TimeoutException as exc:
+            logger.exception("异步本地模型请求超时：task=%s endpoint=%s", task_type, endpoint)
             raise LLMClientError("本地模型请求超时（60秒），请检查模型负载或机器性能。") from exc
         except httpx.HTTPStatusError as exc:
             detail = exc.response.text[:300] if exc.response is not None else ""
-            raise LLMClientError(f"本地接口返回错误：HTTP {exc.response.status_code} {detail}") from exc
+            logger.exception(
+                "异步本地模型返回 HTTP 错误：task=%s status=%s detail=%s",
+                task_type,
+                exc.response.status_code if exc.response is not None else "unknown",
+                detail,
+            )
+            raise LLMClientError(
+                f"本地接口返回错误：HTTP {exc.response.status_code} {detail}"
+            ) from exc
         except httpx.HTTPError as exc:
+            logger.exception("异步本地模型请求失败：task=%s endpoint=%s", task_type, endpoint)
             raise LLMClientError(f"本地请求失败：{exc}") from exc
         except Exception as exc:
+            logger.exception("异步本地模型响应解析失败：task=%s", task_type)
             raise LLMClientError(f"本地响应解析失败：{exc}") from exc
 
     @staticmethod
@@ -220,8 +279,7 @@ class LLMClient:
             raise LLMClientError("模型返回结果为空。")
 
         message = choices[0].get("message", {}) if isinstance(choices[0], dict) else {}
-        content = message.get("content", "")
-        content = str(content).strip()
+        content = str(message.get("content", "")).strip()
         if not content:
             raise LLMClientError("模型返回内容为空。")
         return content
@@ -243,11 +301,13 @@ class LLMClient:
             "我无法直接",
         ]
         if any(pattern in result_lower for pattern in generic_bad_patterns):
+            logger.warning("翻译结果校验失败：返回了通用对话内容。")
             raise LLMClientError(
                 "当前本地模型没有正确执行翻译，而是返回了通用对话内容。建议改用更大的模型。"
             )
 
         if result == source:
+            logger.warning("翻译结果校验失败：返回内容与原文相同。")
             raise LLMClientError("当前本地模型没有完成翻译，返回了与原文相同的内容。")
 
         source_has_cjk = self._contains_cjk(source)
@@ -256,11 +316,13 @@ class LLMClient:
         result_has_latin = self._contains_latin(result)
 
         if source_has_cjk and not source_has_latin and result_has_cjk and not result_has_latin:
+            logger.warning("翻译结果校验失败：中文未翻为英文。")
             raise LLMClientError(
                 "当前本地模型未将中文正确翻译成英文。建议使用至少 3B 以上模型以获得稳定翻译效果。"
             )
 
         if source_has_latin and not source_has_cjk and result_has_latin and not result_has_cjk:
+            logger.warning("翻译结果校验失败：英文未翻为中文。")
             raise LLMClientError(
                 "当前本地模型未将英文正确翻译成中文。建议使用至少 3B 以上模型以获得稳定翻译效果。"
             )

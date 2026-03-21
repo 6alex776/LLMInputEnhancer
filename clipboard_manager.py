@@ -15,10 +15,15 @@ import win32api
 import win32clipboard
 import win32con
 
+from app_logger import get_logger
+
 try:
     import uiautomation as automation
 except Exception:
     automation = None
+
+
+logger = get_logger("clipboard")
 
 
 @dataclass
@@ -67,6 +72,7 @@ class ClipboardManager:
         finally:
             win32clipboard.CloseClipboard()
 
+        logger.info("剪贴板备份完成：共 %s 种格式", len(items))
         return ClipboardSnapshot(items=items)
 
     def restore_clipboard(self, snapshot: ClipboardSnapshot) -> None:
@@ -81,6 +87,8 @@ class ClipboardManager:
                     continue
         finally:
             win32clipboard.CloseClipboard()
+
+        logger.info("剪贴板恢复完成：共恢复 %s 种格式", len(snapshot.items))
 
     @staticmethod
     def _simulate_ctrl_key(vk_code: int) -> None:
@@ -100,6 +108,7 @@ class ClipboardManager:
     def get_selected_text_via_uia(self) -> tuple[str, str]:
         """优先通过 UI Automation 获取选中文本与上下文。"""
         if automation is None:
+            logger.info("UI Automation 不可用，直接跳过 UIA 文本获取。")
             return "", ""
 
         selected_text = ""
@@ -111,10 +120,12 @@ class ClipboardManager:
             initialized = True
         except Exception:
             initialized = False
+            logger.info("UI Automation 初始化失败，将尝试其他文本获取方案。")
 
         try:
             focused = automation.GetFocusedControl()
             if not focused:
+                logger.info("UIA 未获取到焦点控件。")
                 return "", ""
 
             try:
@@ -144,6 +155,7 @@ class ClipboardManager:
                 except Exception:
                     context_text = ""
         except Exception:
+            logger.exception("UIA 文本获取失败。")
             return "", ""
         finally:
             if initialized:
@@ -152,7 +164,14 @@ class ClipboardManager:
                 except Exception:
                     pass
 
-        return self._safe_text(selected_text), self._safe_text(context_text)
+        selected_text = self._safe_text(selected_text)
+        context_text = self._safe_text(context_text)
+        logger.info(
+            "UIA 文本获取完成：selected_length=%s context_length=%s",
+            len(selected_text),
+            len(context_text),
+        )
+        return selected_text, context_text
 
     def get_selected_text_via_clipboard(self) -> str:
         """剪贴板兜底方案：备份 -> Ctrl+C -> 读取文本 -> 恢复。"""
@@ -163,7 +182,9 @@ class ClipboardManager:
             self._simulate_ctrl_key(ord("C"))
             time.sleep(self.copy_delay)
             text = pyperclip.paste()
-            return self._safe_text(text)
+            text = self._safe_text(text)
+            logger.info("剪贴板兜底获取文本完成：length=%s", len(text))
+            return text
         finally:
             self.restore_clipboard(snapshot)
 
@@ -171,9 +192,11 @@ class ClipboardManager:
         """获取选中文本，返回 (文本, 上下文, 来源)。"""
         selected, context = self.get_selected_text_via_uia()
         if selected:
+            logger.info("文本获取成功：来源=uiautomation length=%s", len(selected))
             return selected, context, "uiautomation"
 
         selected = self.get_selected_text_via_clipboard()
+        logger.info("文本获取成功：来源=clipboard length=%s", len(selected))
         return selected, "", "clipboard"
 
     def paste_text(self, text: str) -> None:
@@ -197,3 +220,5 @@ class ClipboardManager:
             time.sleep(self.paste_delay)
         finally:
             self.restore_clipboard(snapshot)
+
+        logger.info("文本粘贴完成：length=%s", len(final_text))
