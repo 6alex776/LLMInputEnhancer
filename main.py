@@ -88,11 +88,9 @@ class AppController:
         self._bind_signals()
         self._register_hotkeys()
         self.tray.show()
-        self.tray.show_info("LLM 输入增强", "程序已启动。Alt+J 打开指令面板。")
 
     def _bind_signals(self) -> None:
         """集中绑定所有 UI 与事件信号。"""
-        self.app.installNativeEventFilter(self.hotkey_listener)
         self.hotkey_listener.hotkey_triggered.connect(self._on_hotkey)
 
         self.command_panel.task_requested.connect(self.start_task)
@@ -110,8 +108,19 @@ class AppController:
             conflict_text = "、".join(failed)
             self.tray.show_error(
                 "热键冲突",
-                f"以下热键注册失败：{conflict_text}。请关闭冲突软件后重启。",
+                f"以下热键注册失败：{conflict_text}。请关闭占用软件后重启。",
             )
+
+        active_map = self.hotkey_listener.get_active_hotkey_map()
+        self.tray.show_info(
+            "LLM 输入增强",
+            (
+                "程序已启动。"
+                f"面板:{active_map.get('show_panel', '未注册')} "
+                f"润色:{active_map.get('quick_polish', '未注册')} "
+                f"翻译:{active_map.get('quick_translate', '未注册')}"
+            ),
+        )
 
     def _on_hotkey(self, hotkey_name: str) -> None:
         """处理全局热键回调。"""
@@ -181,13 +190,7 @@ class AppController:
         if self.worker and self.worker.isRunning():
             self.worker.wait(2000)
 
-        try:
-            self.hotkey_listener.unregister_all()
-        finally:
-            try:
-                self.app.removeNativeEventFilter(self.hotkey_listener)
-            except Exception:
-                pass
+        self.hotkey_listener.unregister_all()
 
         self.tray.hide()
 

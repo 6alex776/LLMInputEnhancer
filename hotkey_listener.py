@@ -1,21 +1,20 @@
-﻿"""全局热键监听模块。
-
-基于 win32 RegisterHotKey + Qt 原生消息循环，不使用键盘钩子。
-"""
+"""Global hotkey listener based on a dedicated Win32 message window."""
 
 from __future__ import annotations
 
-from ctypes import wintypes
 from dataclasses import dataclass
+from pathlib import Path
+import time
 
+import win32api
 import win32con
 import win32gui
-from PySide6.QtCore import QAbstractNativeEventFilter, QObject, Signal
+from PySide6.QtCore import QObject, Signal
 
 
 @dataclass(frozen=True)
 class HotkeyDefinition:
-    """热键定义。"""
+    """Hotkey definition."""
 
     hotkey_id: int
     name: str
@@ -24,77 +23,148 @@ class HotkeyDefinition:
     display: str
 
 
-class HotkeyListener(QAbstractNativeEventFilter, QObject):
-    """注册并监听全局热键。"""
+class HotkeyListener(QObject):
+    """Register and receive global hotkeys from a dedicated Win32 window."""
 
     hotkey_triggered = Signal(str)
 
     def __init__(self) -> None:
-        QAbstractNativeEventFilter.__init__(self)
-        QObject.__init__(self)
+        super().__init__()
         self._registered: dict[int, HotkeyDefinition] = {}
+        self._log_path = Path(__file__).resolve().parent / "hotkey_debug.log"
+        self._class_name = f"LLMInputEnhancerHotkeyWindow_{id(self)}"
+        self._class_atom = 0
+        self._hwnd = 0
+        self._wnd_proc = self._build_wnd_proc()
+        self._create_message_window()
 
     @property
     def default_hotkeys(self) -> list[HotkeyDefinition]:
-        """默认三组核心热键。"""
+        """Default hotkeys."""
         return [
             HotkeyDefinition(1, "show_panel", win32con.MOD_ALT, ord("J"), "Alt+J"),
-            HotkeyDefinition(2, "quick_polish", win32con.MOD_ALT, ord("R"), "Alt+R"),
+            HotkeyDefinition(2, "quick_polish", win32con.MOD_ALT, ord("Q"), "Alt+Q"),
             HotkeyDefinition(3, "quick_translate", win32con.MOD_ALT, ord("T"), "Alt+T"),
         ]
 
     def register_hotkeys(self, hotkeys: list[HotkeyDefinition]) -> list[str]:
-        """注册一组热键，返回注册失败的热键文本列表。"""
+        """Register a group of hotkeys and return failed display names."""
         failed: list[str] = []
         for item in hotkeys:
             if not self._register_one(item):
                 failed.append(item.display)
         return failed
 
+    def register_hotkeys_with_details(
+        self, hotkeys: list[HotkeyDefinition]
+    ) -> tuple[list[HotkeyDefinition], list[HotkeyDefinition]]:
+        """Register a group of hotkeys and return success and failure lists."""
+        success: list[HotkeyDefinition] = []
+        failed: list[HotkeyDefinition] = []
+        for item in hotkeys:
+            if self._register_one(item):
+                success.append(item)
+            else:
+                failed.append(item)
+        return success, failed
+
     def register_default_hotkeys(self) -> list[str]:
-        """注册默认热键。"""
+        """Register default hotkeys."""
         return self.register_hotkeys(self.default_hotkeys)
 
-    def _register_one(self, hotkey: HotkeyDefinition) -> bool:
-        """注册单个热键。"""
-        try:
-            ok = bool(win32gui.RegisterHotKey(None, hotkey.hotkey_id, hotkey.modifiers, hotkey.vk))
-        except Exception:
-            ok = False
-
-        if not ok:
-            return False
-
-        self._registered[hotkey.hotkey_id] = hotkey
-        return True
+    def get_active_hotkey_map(self) -> dict[str, str]:
+        """Return active action to display mapping."""
+        return {item.name: item.display for item in self._registered.values()}
 
     def unregister_all(self) -> None:
-        """注销所有已注册热键，避免热键残留。"""
+        """Unregister all hotkeys and release Win32 resources."""
         for hotkey_id in list(self._registered.keys()):
             try:
-                win32gui.UnregisterHotKey(None, hotkey_id)
-            except Exception:
-                pass
+                win32gui.UnregisterHotKey(self._hwnd, hotkey_id)
+                self._log(f"unregister ok id={hotkey_id}")
+            except Exception as exc:
+                self._log(f"unregister failed id={hotkey_id} error={exc!r}")
             finally:
                 self._registered.pop(hotkey_id, None)
 
-    def nativeEventFilter(self, event_type, message):  # type: ignore[override]
-        """通过 Qt 的原生事件过滤器接收 WM_HOTKEY。"""
-        if event_type in (
-            "windows_generic_MSG",
-            "windows_dispatcher_MSG",
-            b"windows_generic_MSG",
-            b"windows_dispatcher_MSG",
-        ):
+        if self._hwnd:
             try:
-                msg = wintypes.MSG.from_address(int(message))
-            except Exception:
-                return False, 0
+                win32gui.DestroyWindow(self._hwnd)
+            except Exception as exc:
+                self._log(f"destroy window failed error={exc!r}")
+            self._hwnd = 0
 
-            if msg.message == win32con.WM_HOTKEY:
-                hotkey_id = int(msg.wParam)
+    def _build_wnd_proc(self):
+        def _wnd_proc(hwnd, msg, wparam, lparam):
+            if msg == win32con.WM_HOTKEY:
+                hotkey_id = int(wparam)
                 hotkey = self._registered.get(hotkey_id)
+                self._log(f"wm_hotkey hwnd={hwnd} id={hotkey_id} hotkey={hotkey.display if hotkey else 'unknown'}")
                 if hotkey:
                     self.hotkey_triggered.emit(hotkey.name)
-                    return True, 0
-        return False, 0
+                return 0
+
+            if msg == win32con.WM_DESTROY:
+                return 0
+
+            return win32gui.DefWindowProc(hwnd, msg, wparam, lparam)
+
+        return _wnd_proc
+
+    def _create_message_window(self) -> None:
+        hinstance = win32api.GetModuleHandle(None)
+        wnd_class = win32gui.WNDCLASS()
+        wnd_class.hInstance = hinstance
+        wnd_class.lpszClassName = self._class_name
+        wnd_class.lpfnWndProc = self._wnd_proc
+
+        try:
+            self._class_atom = win32gui.RegisterClass(wnd_class)
+        except Exception:
+            # Class may already exist in the interpreter.
+            self._class_atom = 0
+
+        self._hwnd = win32gui.CreateWindow(
+            self._class_name,
+            self._class_name,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            hinstance,
+            None,
+        )
+        self._log(f"message window created hwnd={self._hwnd}")
+
+    def _register_one(self, hotkey: HotkeyDefinition) -> bool:
+        try:
+            result = win32gui.RegisterHotKey(
+                self._hwnd,
+                hotkey.hotkey_id,
+                hotkey.modifiers,
+                hotkey.vk,
+            )
+        except Exception as exc:
+            self._log(f"register failed {hotkey.display} error={exc!r}")
+            return False
+
+        # pywin32 在很多 Win32 API 上“成功时返回 None，失败时抛异常”，
+        # 所以这里不能再用 bool(result) 判断成功与否。
+        if result == 0:
+            self._log(f"register returned false {hotkey.display} result={result!r}")
+            return False
+
+        self._registered[hotkey.hotkey_id] = hotkey
+        self._log(f"register ok {hotkey.display} hwnd={self._hwnd} result={result!r}")
+        return True
+
+    def _log(self, message: str) -> None:
+        timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+        try:
+            with self._log_path.open("a", encoding="utf-8") as handle:
+                handle.write(f"[{timestamp}] {message}\n")
+        except Exception:
+            pass
