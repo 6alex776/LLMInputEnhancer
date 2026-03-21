@@ -1,0 +1,10 @@
+﻿{
+  "provider": "ollama",
+  "doubao_api_key": "",
+  "doubao_model": "doubao-seed-1-6-250615",
+  "doubao_endpoint": "https://ark.cn-beijing.volces.com/api/v3/chat/completions",
+  "ollama_url": "http://127.0.0.1:8080/",
+  "ollama_model": "Qwen3.5-9B-IQ4_NL.gguf",
+  "temperature": 0.2,
+  "max_tokens": 1024
+}
