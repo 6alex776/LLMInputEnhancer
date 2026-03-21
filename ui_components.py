@@ -8,10 +8,9 @@ from __future__ import annotations
 from typing import Any
 
 from PySide6.QtCore import QObject, QPoint, Qt, Signal
-from PySide6.QtGui import QAction, QCursor
+from PySide6.QtGui import QAction, QCursor, QMouseEvent
 from PySide6.QtWidgets import (
     QApplication,
-    QComboBox,
     QDialog,
     QDoubleSpinBox,
     QFormLayout,
@@ -46,8 +45,10 @@ class CommandPanel(QWidget):
 
     def __init__(self) -> None:
         super().__init__()
+        self._drag_active = False
+        self._drag_offset = QPoint()
         self.setWindowTitle("LLM 输入增强")
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Popup | Qt.WindowStaysOnTopHint)
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Tool | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_DeleteOnClose, False)
         self.setMinimumWidth(360)
         self._build_ui()
@@ -58,11 +59,28 @@ class CommandPanel(QWidget):
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(8)
 
-        title = QLabel("LLM 输入增强")
-        title.setObjectName("title_label")
-        layout.addWidget(title)
+        title_row = QHBoxLayout()
+        title_row.setContentsMargins(0, 0, 0, 0)
+        title_row.setSpacing(6)
 
-        tip = QLabel("Alt+数字键快速选择：1/2/3/4")
+        self.title_label = QLabel("LLM 输入增强")
+        self.title_label.setObjectName("title_label")
+
+        self.pin_tip_label = QLabel("此处拖动")
+        self.pin_tip_label.setObjectName("drag_tip_label")
+
+        close_button = QPushButton("×")
+        close_button.setObjectName("close_button")
+        close_button.setFixedSize(28, 28)
+        close_button.clicked.connect(self.hide)
+
+        title_row.addWidget(self.title_label)
+        title_row.addStretch(1)
+        title_row.addWidget(self.pin_tip_label)
+        title_row.addWidget(close_button)
+        layout.addLayout(title_row)
+
+        tip = QLabel("Alt+数字键快速选择：")
         tip.setObjectName("tip_label")
         layout.addWidget(tip)
 
@@ -112,6 +130,10 @@ class CommandPanel(QWidget):
                 color: #0f3d80;
                 border: none;
             }
+            QLabel#drag_tip_label {
+                border: none;
+                color: #6b7c93;
+            }
             QLabel#section_label {
                 font-size: 13px;
                 font-weight: 600;
@@ -137,6 +159,18 @@ class CommandPanel(QWidget):
             QPushButton:hover {
                 background: #194d93;
             }
+            QPushButton#close_button {
+                background: #e7edf7;
+                color: #42566f;
+                border: 1px solid #c7d3e3;
+                border-radius: 6px;
+                font-size: 16px;
+                font-weight: 600;
+                padding: 0;
+            }
+            QPushButton#close_button:hover {
+                background: #dbe6f4;
+            }
             """
         )
 
@@ -158,6 +192,7 @@ class CommandPanel(QWidget):
         self.show()
         self.raise_()
         self.activateWindow()
+        self.grabKeyboard()
         self.custom_input.setFocus()
 
     def _emit_custom_task(self, *_args) -> None:
@@ -195,6 +230,37 @@ class CommandPanel(QWidget):
         self.hide()
         super().focusOutEvent(event)
 
+    def hideEvent(self, event):  # type: ignore[override]
+        """面板关闭时释放键盘占用。"""
+        self.releaseKeyboard()
+        self._drag_active = False
+        super().hideEvent(event)
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:  # type: ignore[override]
+        """按住面板空白区域或标题区域时允许拖动窗口。"""
+        if event.button() == Qt.LeftButton:
+            target_widget = self.childAt(event.position().toPoint())
+            if target_widget in {self, self.title_label, self.pin_tip_label}:
+                self._drag_active = True
+                self._drag_offset = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+                event.accept()
+                return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:  # type: ignore[override]
+        """拖动时更新窗口位置。"""
+        if self._drag_active and event.buttons() & Qt.LeftButton:
+            self.move(event.globalPosition().toPoint() - self._drag_offset)
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # type: ignore[override]
+        """结束拖动状态。"""
+        if event.button() == Qt.LeftButton:
+            self._drag_active = False
+        super().mouseReleaseEvent(event)
+
 
 class SettingsDialog(QDialog):
     """基础设置窗口。"""
@@ -215,18 +281,8 @@ class SettingsDialog(QDialog):
         form.setLabelAlignment(Qt.AlignRight)
         form.setSpacing(10)
 
-        self.provider_combo = QComboBox()
-        self.provider_combo.addItem("云端（豆包）", "doubao")
-        self.provider_combo.addItem("本地（Ollama / llama-server）", "ollama")
-        self.provider_combo.currentIndexChanged.connect(self._on_provider_changed)
-
-        self.doubao_key_input = QLineEdit()
-        self.doubao_key_input.setEchoMode(QLineEdit.Password)
-        self.doubao_model_input = QLineEdit()
-        self.doubao_endpoint_input = QLineEdit()
-
-        self.ollama_url_input = QLineEdit()
-        self.ollama_model_input = QLineEdit()
+        self.local_url_input = QLineEdit()
+        self.local_model_input = QLineEdit()
 
         self.temperature_spin = QDoubleSpinBox()
         self.temperature_spin.setRange(0.0, 2.0)
@@ -236,12 +292,8 @@ class SettingsDialog(QDialog):
         self.max_tokens_spin = QSpinBox()
         self.max_tokens_spin.setRange(32, 8192)
 
-        form.addRow("LLM 类型", self.provider_combo)
-        form.addRow("豆包 API Key", self.doubao_key_input)
-        form.addRow("豆包模型", self.doubao_model_input)
-        form.addRow("豆包接口地址", self.doubao_endpoint_input)
-        form.addRow("本地服务地址", self.ollama_url_input)
-        form.addRow("本地模型名称", self.ollama_model_input)
+        form.addRow("本地服务地址", self.local_url_input)
+        form.addRow("本地模型名称", self.local_model_input)
         form.addRow("Temperature", self.temperature_spin)
         form.addRow("Max Tokens", self.max_tokens_spin)
 
@@ -261,41 +313,16 @@ class SettingsDialog(QDialog):
 
     def load_config(self, config: dict[str, Any]) -> None:
         """回填当前配置到控件。"""
-        provider = str(config.get("provider", "doubao"))
-        index = self.provider_combo.findData(provider)
-        self.provider_combo.setCurrentIndex(0 if index < 0 else index)
-
-        self.doubao_key_input.setText(str(config.get("doubao_api_key", "")))
-        self.doubao_model_input.setText(str(config.get("doubao_model", "")))
-        self.doubao_endpoint_input.setText(str(config.get("doubao_endpoint", "")))
-        self.ollama_url_input.setText(str(config.get("ollama_url", "")))
-        self.ollama_model_input.setText(str(config.get("ollama_model", "")))
+        self.local_url_input.setText(str(config.get("local_url", "")))
+        self.local_model_input.setText(str(config.get("local_model", "")))
         self.temperature_spin.setValue(float(config.get("temperature", 0.2)))
         self.max_tokens_spin.setValue(int(config.get("max_tokens", 1024)))
-
-        self._on_provider_changed()
-
-    def _on_provider_changed(self, *_args) -> None:
-        """根据 provider 切换输入框可编辑状态。"""
-        provider = self.provider_combo.currentData()
-        is_doubao = provider == "doubao"
-
-        self.doubao_key_input.setEnabled(is_doubao)
-        self.doubao_model_input.setEnabled(is_doubao)
-        self.doubao_endpoint_input.setEnabled(is_doubao)
-
-        self.ollama_url_input.setEnabled(not is_doubao)
-        self.ollama_model_input.setEnabled(not is_doubao)
 
     def collect_settings(self) -> dict[str, Any]:
         """读取界面输入并组装配置字典。"""
         return {
-            "provider": self.provider_combo.currentData(),
-            "doubao_api_key": self.doubao_key_input.text().strip(),
-            "doubao_model": self.doubao_model_input.text().strip(),
-            "doubao_endpoint": self.doubao_endpoint_input.text().strip(),
-            "ollama_url": self.ollama_url_input.text().strip(),
-            "ollama_model": self.ollama_model_input.text().strip(),
+            "local_url": self.local_url_input.text().strip(),
+            "local_model": self.local_model_input.text().strip(),
             "temperature": float(self.temperature_spin.value()),
             "max_tokens": int(self.max_tokens_spin.value()),
         }

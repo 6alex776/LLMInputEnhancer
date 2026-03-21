@@ -1,6 +1,7 @@
-﻿"""配置管理模块。
+"""配置管理模块。
 
 负责读取、校验、保存本地 JSON 配置，确保用户设置持久化。
+当前版本仅保留本地 llama-server 相关配置。
 """
 
 from __future__ import annotations
@@ -13,13 +14,9 @@ from urllib.parse import urlparse
 
 
 DEFAULT_CONFIG: dict[str, Any] = {
-    "provider": "ollama",  # 可选值：doubao / ollama
-    "doubao_api_key": "",
-    "doubao_model": "doubao-seed-1-6-250615",
-    "doubao_endpoint": "https://ark.cn-beijing.volces.com/api/v3/chat/completions",
-    "ollama_url": "http://127.0.0.1:8080/",
-    "ollama_model": "Qwen3.5-9B-IQ4_NL.gguf",
-    "temperature": 0.2,
+    "local_url": "http://127.0.0.1:8080/",
+    "local_model": "Qwen3.5-0.8B-IQ4_NL.gguf",
+    "temperature": 0.6,
     "max_tokens": 1024,
 }
 
@@ -49,9 +46,11 @@ class ConfigManager:
             except Exception:
                 data = {}
 
+            migrated = self._migrate_legacy_keys(data)
             merged = DEFAULT_CONFIG.copy()
-            merged.update(data)
+            merged.update(migrated)
             self._config = merged
+            self.save()
             return self._config.copy()
 
     def save(self) -> None:
@@ -76,9 +75,28 @@ class ConfigManager:
     def update(self, patch: dict[str, Any]) -> dict[str, Any]:
         """批量更新并保存配置。"""
         with self._lock:
-            self._config.update(patch)
+            migrated = self._migrate_legacy_keys(patch)
+            self._config.update(migrated)
             self.save()
             return self._config.copy()
+
+    @staticmethod
+    def _migrate_legacy_keys(data: dict[str, Any]) -> dict[str, Any]:
+        """兼容旧版本配置键名，自动迁移到本地模型专用字段。"""
+        migrated = dict(data)
+
+        if "local_url" not in migrated and "ollama_url" in migrated:
+            migrated["local_url"] = migrated.get("ollama_url", "")
+        if "local_model" not in migrated and "ollama_model" in migrated:
+            migrated["local_model"] = migrated.get("ollama_model", "")
+
+        migrated.pop("provider", None)
+        migrated.pop("doubao_api_key", None)
+        migrated.pop("doubao_model", None)
+        migrated.pop("doubao_endpoint", None)
+        migrated.pop("ollama_url", None)
+        migrated.pop("ollama_model", None)
+        return migrated
 
 
 def is_valid_http_url(value: str) -> bool:
@@ -92,22 +110,11 @@ def is_valid_http_url(value: str) -> bool:
 
 def validate_settings(data: dict[str, Any]) -> tuple[bool, str]:
     """设置界面保存前的统一校验逻辑。"""
-    provider = str(data.get("provider", "")).strip().lower()
-    if provider not in {"doubao", "ollama"}:
-        return False, "LLM 类型仅支持 doubao 或 ollama。"
+    local_url = str(data.get("local_url", "")).strip()
+    if not is_valid_http_url(local_url):
+        return False, "本地服务地址格式不正确，请填写完整的 HTTP/HTTPS 地址。"
 
-    if provider == "doubao":
-        if not str(data.get("doubao_api_key", "")).strip():
-            return False, "云端模式必须填写豆包 API Key。"
-        endpoint = str(data.get("doubao_endpoint", "")).strip()
-        if not is_valid_http_url(endpoint):
-            return False, "豆包接口地址格式不正确，请填写完整的 HTTP/HTTPS 地址。"
-
-    if provider == "ollama":
-        ollama_url = str(data.get("ollama_url", "")).strip()
-        if not is_valid_http_url(ollama_url):
-            return False, "本地服务地址格式不正确，请填写完整的 HTTP/HTTPS 地址。"
-        if not str(data.get("ollama_model", "")).strip():
-            return False, "本地模式必须填写模型名称。"
+    if not str(data.get("local_model", "")).strip():
+        return False, "本地模型名称不能为空。"
 
     return True, ""
