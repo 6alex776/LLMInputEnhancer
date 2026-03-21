@@ -11,6 +11,8 @@ import win32con
 import win32gui
 from PySide6.QtCore import QObject, Signal
 
+VK_OEM_3 = getattr(win32con, "VK_OEM_3", 0xC0)
+
 
 @dataclass(frozen=True)
 class HotkeyDefinition:
@@ -42,9 +44,11 @@ class HotkeyListener(QObject):
     def default_hotkeys(self) -> list[HotkeyDefinition]:
         """Default hotkeys."""
         return [
-            HotkeyDefinition(1, "show_panel", win32con.MOD_ALT, ord("J"), "Alt+J"),
-            HotkeyDefinition(2, "quick_polish", win32con.MOD_ALT, ord("Q"), "Alt+Q"),
-            HotkeyDefinition(3, "quick_translate", win32con.MOD_ALT, ord("T"), "Alt+T"),
+            HotkeyDefinition(1, "show_panel", win32con.MOD_ALT, VK_OEM_3, "Alt+`"),
+            HotkeyDefinition(2, "quick_polish", win32con.MOD_ALT, ord("1"), "Alt+1"),
+            HotkeyDefinition(3, "quick_translate", win32con.MOD_ALT, ord("2"), "Alt+2"),
+            HotkeyDefinition(4, "quick_expand", win32con.MOD_ALT, ord("3"), "Alt+3"),
+            HotkeyDefinition(5, "quick_summarize", win32con.MOD_ALT, ord("4"), "Alt+4"),
         ]
 
     def register_hotkeys(self, hotkeys: list[HotkeyDefinition]) -> list[str]:

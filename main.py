@@ -118,7 +118,9 @@ class AppController:
                 "程序已启动。"
                 f"面板:{active_map.get('show_panel', '未注册')} "
                 f"润色:{active_map.get('quick_polish', '未注册')} "
-                f"翻译:{active_map.get('quick_translate', '未注册')}"
+                f"翻译:{active_map.get('quick_translate', '未注册')} "
+                f"扩写:{active_map.get('quick_expand', '未注册')} "
+                f"缩写:{active_map.get('quick_summarize', '未注册')}"
             ),
         )
 
@@ -132,6 +134,12 @@ class AppController:
             return
         if hotkey_name == "quick_translate":
             self.start_task("translate", "")
+            return
+        if hotkey_name == "quick_expand":
+            self.start_task("expand", "")
+            return
+        if hotkey_name == "quick_summarize":
+            self.start_task("summarize", "")
             return
 
     def show_command_panel(self) -> None:

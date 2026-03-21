@@ -62,7 +62,7 @@ class CommandPanel(QWidget):
         title.setObjectName("title_label")
         layout.addWidget(title)
 
-        tip = QLabel("数字键快速选择：1/2/3/4")
+        tip = QLabel("Alt+数字键快速选择：1/2/3/4")
         tip.setObjectName("tip_label")
         layout.addWidget(tip)
 

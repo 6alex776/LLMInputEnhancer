@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import httpx
@@ -43,6 +44,45 @@ class LLMClient:
         return f"{base_rule}\n{task_prompts.get(task_type, task_prompts['polish'])}"
 
     @staticmethod
+    def _contains_cjk(text: str) -> bool:
+        """判断文本是否包含中日韩统一表意文字。"""
+        return bool(re.search(r"[\u4e00-\u9fff]", text))
+
+    @staticmethod
+    def _contains_latin(text: str) -> bool:
+        """判断文本是否包含英文字母。"""
+        return bool(re.search(r"[A-Za-z]", text))
+
+    def _build_translate_messages(self, text: str) -> list[dict[str, str]]:
+        """为翻译任务构建更强约束的消息。"""
+        has_cjk = self._contains_cjk(text)
+        has_latin = self._contains_latin(text)
+
+        if has_cjk and not has_latin:
+            direction_prompt = (
+                "你是中英翻译引擎。"
+                "把用户给出的中文直接翻译成自然、准确、简洁的英文。"
+                "只输出英文译文，不要解释，不要补充。"
+            )
+        elif has_latin and not has_cjk:
+            direction_prompt = (
+                "你是中英翻译引擎。"
+                "把用户给出的英文直接翻译成自然、准确、简洁的中文。"
+                "只输出中文译文，不要解释，不要补充。"
+            )
+        else:
+            direction_prompt = (
+                "你是中英翻译引擎。"
+                "自动识别用户文本是中文还是英文，并把它翻译成另一种语言。"
+                "只输出译文，不要解释，不要补充。"
+            )
+
+        return [
+            {"role": "system", "content": direction_prompt},
+            {"role": "user", "content": text},
+        ]
+
+    @staticmethod
     def _user_prompt(text: str, context: str = "") -> str:
         """构建用户输入提示。"""
         context_part = ""
@@ -61,14 +101,22 @@ class LLMClient:
         config = self.config_manager.all()
         provider = str(config.get("provider", "doubao")).strip().lower()
 
-        messages = [
-            {"role": "system", "content": self._system_prompt(task_type, custom_instruction)},
-            {"role": "user", "content": self._user_prompt(text, context)},
-        ]
+        if task_type == "translate":
+            messages = self._build_translate_messages(text)
+        else:
+            messages = [
+                {"role": "system", "content": self._system_prompt(task_type, custom_instruction)},
+                {"role": "user", "content": self._user_prompt(text, context)},
+            ]
 
         if provider == "ollama":
-            return self._call_local_sync(messages, config)
-        return self._call_doubao_sync(messages, config)
+            result = self._call_local_sync(messages, config)
+        else:
+            result = self._call_doubao_sync(messages, config)
+
+        if task_type == "translate":
+            self._validate_translation_result(text, result)
+        return result
 
     async def generate_async(
         self,
@@ -81,14 +129,22 @@ class LLMClient:
         config = self.config_manager.all()
         provider = str(config.get("provider", "doubao")).strip().lower()
 
-        messages = [
-            {"role": "system", "content": self._system_prompt(task_type, custom_instruction)},
-            {"role": "user", "content": self._user_prompt(text, context)},
-        ]
+        if task_type == "translate":
+            messages = self._build_translate_messages(text)
+        else:
+            messages = [
+                {"role": "system", "content": self._system_prompt(task_type, custom_instruction)},
+                {"role": "user", "content": self._user_prompt(text, context)},
+            ]
 
         if provider == "ollama":
-            return await self._call_local_async(messages, config)
-        return await self._call_doubao_async(messages, config)
+            result = await self._call_local_async(messages, config)
+        else:
+            result = await self._call_doubao_async(messages, config)
+
+        if task_type == "translate":
+            self._validate_translation_result(text, result)
+        return result
 
     def stream_generate(
         self,
@@ -265,3 +321,42 @@ class LLMClient:
         if not content:
             raise LLMClientError("模型返回内容为空。")
         return content
+
+    def _validate_translation_result(self, source_text: str, result_text: str) -> None:
+        """对翻译结果做基础可信度校验，避免错误结果直接覆盖原文。"""
+        source = source_text.strip()
+        result = result_text.strip()
+        result_lower = result.lower()
+
+        generic_bad_patterns = [
+            "what would you like",
+            "how can i help",
+            "i'd love to help",
+            "please provide",
+            "请告诉我",
+            "请提供",
+            "我可以帮助你",
+            "我无法直接",
+        ]
+        if any(pattern in result_lower for pattern in generic_bad_patterns):
+            raise LLMClientError(
+                "当前本地模型没有正确执行翻译，而是返回了通用对话内容。建议改用更大的模型。"
+            )
+
+        if result == source:
+            raise LLMClientError("当前本地模型没有完成翻译，返回了与原文相同的内容。")
+
+        source_has_cjk = self._contains_cjk(source)
+        source_has_latin = self._contains_latin(source)
+        result_has_cjk = self._contains_cjk(result)
+        result_has_latin = self._contains_latin(result)
+
+        if source_has_cjk and not source_has_latin and result_has_cjk and not result_has_latin:
+            raise LLMClientError(
+                "当前本地模型未将中文正确翻译成英文。建议使用至少 3B 以上模型以获得稳定翻译效果。"
+            )
+
+        if source_has_latin and not source_has_cjk and result_has_latin and not result_has_cjk:
+            raise LLMClientError(
+                "当前本地模型未将英文正确翻译成中文。建议使用至少 3B 以上模型以获得稳定翻译效果。"
+            )
