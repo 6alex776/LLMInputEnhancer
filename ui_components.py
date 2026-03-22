@@ -344,6 +344,7 @@ class AppTray(QObject):
 
     show_panel_requested = Signal()
     show_settings_requested = Signal()
+    check_service_requested = Signal()
     quit_requested = Signal()
 
     def __init__(self, parent: QObject | None = None) -> None:
@@ -356,14 +357,17 @@ class AppTray(QObject):
         self.menu = QMenu()
         self.open_action = QAction("打开指令面板", self.menu)
         self.settings_action = QAction("设置", self.menu)
+        self.check_service_action = QAction("检查本地模型服务", self.menu)
         self.quit_action = QAction("退出", self.menu)
 
         self.open_action.triggered.connect(self._on_open_action_triggered)
         self.settings_action.triggered.connect(self._on_settings_action_triggered)
+        self.check_service_action.triggered.connect(self._on_check_service_action_triggered)
         self.quit_action.triggered.connect(self._on_quit_action_triggered)
 
         self.menu.addAction(self.open_action)
         self.menu.addAction(self.settings_action)
+        self.menu.addAction(self.check_service_action)
         self.menu.addSeparator()
         self.menu.addAction(self.quit_action)
 
@@ -386,6 +390,10 @@ class AppTray(QObject):
         """显示错误提示。"""
         self.tray.showMessage(title, message, QSystemTrayIcon.Critical, 5000)
 
+    def show_warning(self, title: str, message: str) -> None:
+        """显示警告提示。"""
+        self.tray.showMessage(title, message, QSystemTrayIcon.Warning, 5000)
+
     def _on_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
         """单击托盘图标时弹出指令面板。"""
         if reason in {
@@ -399,6 +407,9 @@ class AppTray(QObject):
 
     def _on_settings_action_triggered(self, _checked: bool = False) -> None:
         self.show_settings_requested.emit()
+
+    def _on_check_service_action_triggered(self, _checked: bool = False) -> None:
+        self.check_service_requested.emit()
 
     def _on_quit_action_triggered(self, _checked: bool = False) -> None:
         self.quit_requested.emit()

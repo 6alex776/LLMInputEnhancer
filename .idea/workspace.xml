@@ -4,14 +4,11 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="b729646b-ad7e-435e-9c57-9508e3b1c11f" name="更改" comment="基础功能完成">
+    <list default="true" id="b729646b-ad7e-435e-9c57-9508e3b1c11f" name="更改" comment="添加了全局日志系统">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/clipboard_manager.py" beforeDir="false" afterPath="$PROJECT_DIR$/clipboard_manager.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/config.py" beforeDir="false" afterPath="$PROJECT_DIR$/config.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/hotkey_debug.log" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/hotkey_listener.py" beforeDir="false" afterPath="$PROJECT_DIR$/hotkey_listener.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/llm_client.py" beforeDir="false" afterPath="$PROJECT_DIR$/llm_client.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/ui_components.py" beforeDir="false" afterPath="$PROJECT_DIR$/ui_components.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -179,7 +176,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774113831305</updated>
     </task>
-    <option name="localTasksCounter" value="5" />
+    <task id="LOCAL-00005" summary="添加了全局日志系统">
+      <option name="closed" value="true" />
+      <created>1774115207994</created>
+      <option name="number" value="00005" />
+      <option name="presentableId" value="LOCAL-00005" />
+      <option name="project" value="LOCAL" />
+      <updated>1774115207994</updated>
+    </task>
+    <option name="localTasksCounter" value="6" />
     <servers />
   </component>
   <component name="VcsManagerConfiguration">
@@ -187,6 +192,7 @@
     <MESSAGE value="基本框架完成，热键测试正常" />
     <MESSAGE value="修改模型为Qwen3.5-0.8B-IQ4_NL.gguf；进一步完善了快捷键" />
     <MESSAGE value="基础功能完成" />
-    <option name="LAST_COMMIT_MESSAGE" value="基础功能完成" />
+    <MESSAGE value="添加了全局日志系统" />
+    <option name="LAST_COMMIT_MESSAGE" value="添加了全局日志系统" />
   </component>
 </project>

@@ -155,6 +155,55 @@ class LLMClient:
         """预留流式接口，MVP 暂不实现流式解析。"""
         raise NotImplementedError("已预留流式输出接口，当前 MVP 版本使用全量输出。")
 
+    def check_service(self, timeout_seconds: float = 3.0) -> tuple[bool, str]:
+        """检查本地 llama-server 是否可用，并验证当前模型配置。"""
+        config = self.config_manager.all()
+        base_url = str(config.get("local_url", "http://127.0.0.1:8080/")).rstrip("/")
+        target_model = str(config.get("local_model", "")).strip()
+        timeout = httpx.Timeout(timeout_seconds)
+
+        logger.info("开始检查本地模型服务：base_url=%s target_model=%s", base_url, target_model)
+
+        try:
+            with httpx.Client(timeout=timeout) as client:
+                health_response = client.get(f"{base_url}/health")
+                if health_response.status_code == 200:
+                    logger.info("本地模型服务健康检查通过：/health")
+
+                models_response = client.get(f"{base_url}/v1/models")
+                models_response.raise_for_status()
+                payload = models_response.json()
+        except httpx.ConnectError as exc:
+            logger.exception("本地模型服务检查失败：无法连接。")
+            return False, "无法连接本地 llama-server，请确认服务已经启动。"
+        except httpx.TimeoutException as exc:
+            logger.exception("本地模型服务检查失败：请求超时。")
+            return False, "本地模型服务检查超时，请确认服务是否卡住或机器负载过高。"
+        except httpx.HTTPError as exc:
+            logger.exception("本地模型服务检查失败：HTTP 异常。")
+            return False, f"本地模型服务检查失败：{exc}"
+        except Exception as exc:
+            logger.exception("本地模型服务检查失败：未知异常。")
+            return False, f"本地模型服务检查失败：{exc}"
+
+        models = payload.get("data", []) if isinstance(payload, dict) else []
+        model_ids = [str(item.get("id", "")).strip() for item in models if isinstance(item, dict)]
+
+        if target_model and model_ids and target_model not in model_ids:
+            logger.warning("本地模型服务已连接，但未找到当前配置模型：%s", target_model)
+            return False, f"服务已启动，但未找到当前配置的模型：{target_model}"
+
+        if target_model and not model_ids:
+            logger.info("本地模型服务已连接，模型列表为空，继续使用当前配置模型。")
+            return True, f"本地模型服务可访问，当前模型配置为：{target_model}"
+
+        if target_model:
+            logger.info("本地模型服务检查成功，已找到目标模型：%s", target_model)
+            return True, f"本地模型服务正常，已检测到模型：{target_model}"
+
+        logger.info("本地模型服务检查成功。")
+        return True, "本地模型服务正常。"
+
     def _call_local_sync(
         self,
         messages: list[dict[str, str]],
@@ -187,7 +236,7 @@ class LLMClient:
                 data = response.json()
 
             elapsed_ms = int((time.perf_counter() - started_at) * 1000)
-            logger.info("本地模型响应成功：task=%s status=%s elapsed_ms=%s", task_type, 200, elapsed_ms)
+            logger.info("本地模型响应成功：task=%s elapsed_ms=%s", task_type, elapsed_ms)
             return self._parse_chat_completion(data)
         except httpx.ConnectError as exc:
             logger.exception("连接本地 llama-server 失败：endpoint=%s", endpoint)
@@ -197,12 +246,7 @@ class LLMClient:
             raise LLMClientError("本地模型请求超时（60秒），请检查模型负载或机器性能。") from exc
         except httpx.HTTPStatusError as exc:
             detail = exc.response.text[:300] if exc.response is not None else ""
-            logger.exception(
-                "本地模型返回 HTTP 错误：task=%s status=%s detail=%s",
-                task_type,
-                exc.response.status_code if exc.response is not None else "unknown",
-                detail,
-            )
+            logger.exception("本地模型返回 HTTP 错误：task=%s detail=%s", task_type, detail)
             raise LLMClientError(
                 f"本地接口返回错误：HTTP {exc.response.status_code} {detail}"
             ) from exc
@@ -245,7 +289,7 @@ class LLMClient:
                 data = response.json()
 
             elapsed_ms = int((time.perf_counter() - started_at) * 1000)
-            logger.info("异步本地模型响应成功：task=%s status=%s elapsed_ms=%s", task_type, 200, elapsed_ms)
+            logger.info("异步本地模型响应成功：task=%s elapsed_ms=%s", task_type, elapsed_ms)
             return self._parse_chat_completion(data)
         except httpx.ConnectError as exc:
             logger.exception("连接异步本地 llama-server 失败：endpoint=%s", endpoint)
@@ -255,12 +299,7 @@ class LLMClient:
             raise LLMClientError("本地模型请求超时（60秒），请检查模型负载或机器性能。") from exc
         except httpx.HTTPStatusError as exc:
             detail = exc.response.text[:300] if exc.response is not None else ""
-            logger.exception(
-                "异步本地模型返回 HTTP 错误：task=%s status=%s detail=%s",
-                task_type,
-                exc.response.status_code if exc.response is not None else "unknown",
-                detail,
-            )
+            logger.exception("异步本地模型返回 HTTP 错误：task=%s detail=%s", task_type, detail)
             raise LLMClientError(
                 f"本地接口返回错误：HTTP {exc.response.status_code} {detail}"
             ) from exc

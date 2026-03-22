@@ -80,6 +80,28 @@ class TextProcessThread(QThread):
             self.failed.emit(str(exc))
 
 
+class ServiceCheckThread(QThread):
+    """后台检查本地模型服务状态。"""
+
+    success = Signal(str)
+    failed = Signal(str)
+
+    def __init__(self, llm_client: LLMClient) -> None:
+        super().__init__()
+        self.llm_client = llm_client
+
+    def run(self) -> None:  # type: ignore[override]
+        try:
+            ok, message = self.llm_client.check_service()
+            if ok:
+                self.success.emit(message)
+                return
+            self.failed.emit(message)
+        except Exception as exc:
+            logger.exception("本地模型服务检查失败。")
+            self.failed.emit(str(exc))
+
+
 class AppController:
     """应用总控制器。"""
 
@@ -96,6 +118,7 @@ class AppController:
         self.tray = AppTray()
         self.hotkey_listener = HotkeyListener()
         self.worker: TextProcessThread | None = None
+        self.service_checker: ServiceCheckThread | None = None
 
         self._bind_signals()
         self._register_hotkeys()
@@ -110,6 +133,7 @@ class AppController:
 
         self.tray.show_panel_requested.connect(self.show_command_panel)
         self.tray.show_settings_requested.connect(self.show_settings)
+        self.tray.check_service_requested.connect(self.check_local_service)
         self.tray.quit_requested.connect(self.shutdown)
 
         self.app.aboutToQuit.connect(self._cleanup_resources)
@@ -202,13 +226,66 @@ class AppController:
 
     def _on_task_failed(self, error_message: str) -> None:
         """任务失败提示。"""
-        logger.warning("任务失败：%s", error_message)
-        self.tray.show_error("处理失败", error_message)
+        final_message = self._build_recovery_message(error_message)
+        logger.warning("任务失败：%s", final_message)
+        self.tray.show_error("处理失败", final_message)
 
     def _on_worker_finished(self) -> None:
         """线程结束后清理引用。"""
         logger.info("后台线程已结束。")
         self.worker = None
+
+    def check_local_service(self) -> None:
+        """手动检查本地模型服务状态。"""
+        if self.service_checker and self.service_checker.isRunning():
+            self.tray.show_info("检查中", "本地模型服务检查已在进行，请稍候。")
+            return
+
+        logger.info("开始检查本地模型服务。")
+        self.service_checker = ServiceCheckThread(self.llm_client)
+        self.service_checker.success.connect(self._on_service_check_success)
+        self.service_checker.failed.connect(self._on_service_check_failed)
+        self.service_checker.finished.connect(self._on_service_check_finished)
+        self.service_checker.start()
+
+    def _on_service_check_success(self, message: str) -> None:
+        """本地模型服务检查成功。"""
+        logger.info("本地模型服务检查成功：%s", message)
+        self.tray.show_info("服务检查完成", message)
+
+    def _on_service_check_failed(self, message: str) -> None:
+        """本地模型服务检查失败。"""
+        logger.warning("本地模型服务检查失败：%s", message)
+        self.tray.show_error("服务检查失败", message)
+
+    def _on_service_check_finished(self) -> None:
+        """清理服务检查线程引用。"""
+        logger.info("本地模型服务检查线程已结束。")
+        self.service_checker = None
+
+    @staticmethod
+    def _build_recovery_message(error_message: str) -> str:
+        """为常见异常补充可执行的恢复建议。"""
+        if "无法连接本地 llama-server" in error_message:
+            return (
+                f"{error_message}\n"
+                "恢复建议：确认 llama-server 已启动、检查设置中的本地服务地址，"
+                "或从托盘菜单点击“检查本地模型服务”。"
+            )
+
+        if "请求超时" in error_message:
+            return (
+                f"{error_message}\n"
+                "恢复建议：等待模型空闲后重试，或换用更小上下文、更快模型。"
+            )
+
+        if "未检测到选中文本" in error_message:
+            return (
+                f"{error_message}\n"
+                "恢复建议：请在可编辑输入框中重新选中文本后再触发快捷键。"
+            )
+
+        return error_message
 
     def shutdown(self) -> None:
         """主动退出入口。"""
@@ -223,6 +300,9 @@ class AppController:
         logger.info("开始清理应用资源。")
         if self.worker and self.worker.isRunning():
             self.worker.wait(2000)
+
+        if self.service_checker and self.service_checker.isRunning():
+            self.service_checker.wait(2000)
 
         self.hotkey_listener.unregister_all()
 
