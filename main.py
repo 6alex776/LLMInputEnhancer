@@ -6,13 +6,14 @@
 from __future__ import annotations
 
 import sys
+import time
 import traceback
 
 from PySide6.QtCore import QSharedMemory, QThread, Qt, Signal
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from app_logger import get_logger, setup_logging
-from clipboard_manager import ClipboardManager
+from clipboard_manager import ClipboardManager, StreamEditSession
 from config import ConfigManager
 from hotkey_listener import HotkeyListener
 from llm_client import LLMClient, LLMClientError
@@ -33,6 +34,10 @@ logger = get_logger("main")
 class TextProcessThread(QThread):
     """后台处理线程：获取文本、调用 LLM、输出结果。"""
 
+    STREAM_FLUSH_INTERVAL = 0.05 #返回时间阈值
+    STREAM_FLUSH_CHARS = 6 #返回字符阈值
+    STREAM_FLUSH_ENDINGS = (" ", "\n", "\t", ",", ".", "!", "?", ";", ":", "，", "。", "！", "？", "；", "：")
+
     success = Signal(str)
     failed = Signal(str)
 
@@ -51,22 +56,49 @@ class TextProcessThread(QThread):
 
     def run(self) -> None:  # type: ignore[override]
         """执行完整处理链路。"""
+        session: StreamEditSession | None = None
         try:
             logger.info("后台任务开始：task=%s", self.task_type)
             text, context, source = self.clipboard_manager.get_selected_text()
             if not text:
                 raise ValueError("未检测到选中文本，请先选中内容后再触发快捷键。")
 
-            result = self.llm_client.generate(
+            session = self.clipboard_manager.create_stream_session(text)
+            result_parts: list[str] = []
+            pending_parts: list[str] = []
+            last_flush = time.monotonic()
+
+            for chunk in self.llm_client.stream_generate(
                 task_type=self.task_type,
                 text=text,
                 custom_instruction=self.custom_instruction,
                 context=context,
-            )
-            if not result.strip():
+            ):
+                if not chunk:
+                    continue
+
+                result_parts.append(chunk)
+                pending_parts.append(chunk)
+                pending_text = "".join(pending_parts)
+                now = time.monotonic()
+                if self._should_flush_pending(pending_text, now - last_flush):
+                    self.clipboard_manager.append_stream_text(session, pending_text)
+                    pending_parts.clear()
+                    last_flush = now
+
+            if pending_parts:
+                pending_text = "".join(pending_parts)
+                self.clipboard_manager.append_stream_text(session, pending_text)
+
+            result = "".join(result_parts).strip()
+            if not result:
                 raise LLMClientError("模型返回为空，未执行替换。")
 
-            self.clipboard_manager.paste_text(result)
+            if session.started:
+                self.clipboard_manager.finish_stream_session(session)
+            else:
+                self.clipboard_manager.paste_text(result)
+
             logger.info(
                 "后台任务完成：task=%s source=%s input_length=%s output_length=%s",
                 self.task_type,
@@ -76,8 +108,25 @@ class TextProcessThread(QThread):
             )
             self.success.emit(f"{TASK_NAME_MAP.get(self.task_type, '文本处理')}完成（来源：{source}）。")
         except Exception as exc:
+            restored = False
+            if session is not None:
+                restored = self.clipboard_manager.abort_stream_session(session)
             logger.exception("后台任务失败：task=%s", self.task_type)
-            self.failed.emit(str(exc))
+            if restored:
+                self.failed.emit(f"{exc}\n已自动恢复原文本。")
+            else:
+                self.failed.emit(str(exc))
+
+    @classmethod
+    def _should_flush_pending(cls, pending_text: str, elapsed_seconds: float) -> bool:
+        """根据长度、标点和时间片决定是否立即写回。"""
+        if not pending_text:
+            return False
+        if len(pending_text) >= cls.STREAM_FLUSH_CHARS:
+            return True
+        if pending_text.endswith(cls.STREAM_FLUSH_ENDINGS):
+            return True
+        return elapsed_seconds >= cls.STREAM_FLUSH_INTERVAL
 
 
 class ServiceCheckThread(QThread):
@@ -283,6 +332,18 @@ class AppController:
             return (
                 f"{error_message}\n"
                 "恢复建议：请在可编辑输入框中重新选中文本后再触发快捷键。"
+            )
+
+        if "目标输入窗口已变化" in error_message or "目标输入框焦点已变化" in error_message:
+            return (
+                f"{error_message}\n"
+                "恢复建议：在生成过程中保持原输入框聚焦，不要切换窗口或点击其他位置，然后重新触发。"
+            )
+
+        if "发送输入事件失败" in error_message:
+            return (
+                f"{error_message}\n"
+                "恢复建议：目标程序可能不接受模拟输入，可尝试以相同权限运行本工具和目标程序后重试。"
             )
 
         return error_message
