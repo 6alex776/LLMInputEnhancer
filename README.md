@@ -81,6 +81,31 @@ LLMInputEnhancer/
 
 推荐你优先使用独立虚拟环境或 Conda 环境运行本项目。
 
+## 使用前准备
+
+发布包本身只包含客户端，不包含大模型本体，也不包含本地推理服务。
+
+在使用本项目之前，请先完成下面这些准备工作：
+
+1. 下载本项目对应版本的可执行发布包
+2. 额外下载并安装 `llama.cpp`
+3. 准备并部署你自己的本地大模型文件
+4. 启动本地模型服务后，再运行本项目
+
+推荐下载的 `llama.cpp` 版本：
+
+- [llama.cpp b8591](https://github.com/ggml-org/llama.cpp/releases/tag/b8591)
+
+建议优先下载其中带 `llama-server` 的 Windows 预编译包。
+
+你至少需要准备以下内容：
+
+- `llama-server.exe`
+- 你自己的 GGUF 模型文件
+- 可用的本地模型服务地址，例如 `http://127.0.0.1:8080/`
+
+如果没有先部署并启动本地模型服务，本项目即使可以打开，也无法实际完成文本处理。
+
 ## 安装依赖
 
 基础运行依赖：
@@ -112,6 +137,18 @@ pip install torch
 - `POST /v1/chat/completions`
 
 只要你的本地服务地址可访问，并且兼容上述接口协议，就可以接入。
+
+### 首次使用建议
+
+首次使用时，建议按这个顺序完成：
+
+1. 下载本项目的 exe 发布包
+2. 从 [llama.cpp b8591](https://github.com/ggml-org/llama.cpp/releases/tag/b8591) 下载 Windows 版本
+3. 准备你自己的 GGUF 模型
+4. 用 `llama-server` 启动模型服务
+5. 启动本项目
+6. 在设置中确认 `local_url` 和 `local_model`
+7. 通过托盘菜单手动执行一次“检查本地模型服务”
 
 ## 启动项目
 
