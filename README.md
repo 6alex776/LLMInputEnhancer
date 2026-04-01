@@ -256,7 +256,7 @@ python src/classifier/train.py --epochs 20 --batch-size 32 --device cuda
 
 ## 日志
 
-运行日志默认写入：
+运行后日志自动创建文件夹，并默认写入：
 
 - `logs/app.log`
 
