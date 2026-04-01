@@ -30,6 +30,16 @@ class HotkeyDefinition:
     display: str
 
 
+DEFAULT_HOTKEYS: tuple[HotkeyDefinition, ...] = (
+    HotkeyDefinition(1, "show_panel", win32con.MOD_ALT, VK_OEM_3, "Alt+`"),
+    HotkeyDefinition(2, "quick_polish", win32con.MOD_ALT, ord("1"), "Alt+1"),
+    HotkeyDefinition(3, "quick_translate", win32con.MOD_ALT, ord("2"), "Alt+2"),
+    HotkeyDefinition(4, "quick_expand", win32con.MOD_ALT, ord("3"), "Alt+3"),
+    HotkeyDefinition(5, "quick_summarize", win32con.MOD_ALT, ord("4"), "Alt+4"),
+    HotkeyDefinition(6, "auto_classify", win32con.MOD_ALT, ord("A"), "Alt+A"),
+)
+
+
 class HotkeyListener(QObject):
     """注册并监听全局热键。"""
 
@@ -47,13 +57,7 @@ class HotkeyListener(QObject):
     @property
     def default_hotkeys(self) -> list[HotkeyDefinition]:
         """默认全局热键。"""
-        return [
-            HotkeyDefinition(1, "show_panel", win32con.MOD_ALT, VK_OEM_3, "Alt+`"),
-            HotkeyDefinition(2, "quick_polish", win32con.MOD_ALT, ord("1"), "Alt+1"),
-            HotkeyDefinition(3, "quick_translate", win32con.MOD_ALT, ord("2"), "Alt+2"),
-            HotkeyDefinition(4, "quick_expand", win32con.MOD_ALT, ord("3"), "Alt+3"),
-            HotkeyDefinition(5, "quick_summarize", win32con.MOD_ALT, ord("4"), "Alt+4"),
-        ]
+        return list(DEFAULT_HOTKEYS)
 
     def register_hotkeys(self, hotkeys: list[HotkeyDefinition]) -> list[str]:
         """注册一组热键，返回注册失败的热键文本列表。"""

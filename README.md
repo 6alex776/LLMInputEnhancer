@@ -1,5 +1,7 @@
 # LLMInputEnhancer
 
+当前版本：`v0.2.0-beta`
+
 一个面向 Windows 桌面输入场景的本地大模型输入增强工具。
 
 它的目标不是替代聊天界面，而是把本地 LLM 直接接入你正在使用的输入框：先选中文本，再通过全局热键完成润色、翻译、扩写、缩写或自定义改写，并把结果回灌到原输入位置。
@@ -55,21 +57,23 @@
 
 ```text
 LLMInputEnhancer/
-├─ main.py                  # 程序入口与整体控制器
-├─ ui_components.py         # 托盘、指令面板、设置窗口
-├─ hotkey_listener.py       # Win32 全局热键监听
-├─ clipboard_manager.py     # 选中文本获取、剪贴板处理、流式写回
-├─ llm_client.py            # 本地模型调用封装
-├─ config.py                # 配置读取、保存与校验
 ├─ config.json              # 本地配置文件
-├─ app_logger.py            # 日志初始化
-├─ classifier/              # 文本任务分类器
-│  ├─ train.py              # 训练脚本
-│  ├─ infer.py              # 推理运行时
-│  ├─ model.py              # Hybrid TextCNN 模型
-│  ├─ dataset.py            # 数据读取与特征提取
-│  ├─ data/                 # 训练/验证样本
-│  └─ artifacts/            # 导出的模型与词表
+├─ src/
+│  ├─ main.py               # 程序入口与整体控制器
+│  ├─ ui_components.py      # 托盘、指令面板、设置窗口
+│  ├─ hotkey_listener.py    # Win32 全局热键监听
+│  ├─ clipboard_manager.py  # 选中文本获取、剪贴板处理、流式写回
+│  ├─ llm_client.py         # 本地模型调用封装
+│  ├─ config.py             # 配置读取、保存与校验
+│  ├─ app_logger.py         # 日志初始化
+│  ├─ app_info.py           # 应用名称与版本信息
+│  └─ classifier/           # 文本任务分类器
+│     ├─ train.py           # 训练脚本
+│     ├─ infer.py           # 推理运行时
+│     ├─ model.py           # Hybrid TextCNN 模型
+│     ├─ dataset.py         # 数据读取与特征提取
+│     ├─ data/              # 训练/验证样本
+│     └─ artifacts/         # 导出的模型与词表
 └─ logs/                    # 运行日志
 ```
 
@@ -153,7 +157,7 @@ pip install torch
 ## 启动项目
 
 ```powershell
-python main.py
+python src/main.py
 ```
 
 程序启动后会常驻系统托盘。
@@ -205,8 +209,8 @@ python main.py
 
 默认数据位置：
 
-- `classifier/data/train.jsonl`
-- `classifier/data/val.jsonl`
+- `src/classifier/data/train.jsonl`
+- `src/classifier/data/val.jsonl`
 
 每行一个 JSON 对象，例如：
 
@@ -217,20 +221,20 @@ python main.py
 ### 训练命令
 
 ```powershell
-python classifier/train.py
+python src/classifier/train.py
 ```
 
 常用参数示例：
 
 ```powershell
-python classifier/train.py --epochs 20 --batch-size 32 --device cuda
+python src/classifier/train.py --epochs 20 --batch-size 32 --device cuda
 ```
 
 训练完成后会在以下目录生成产物：
 
-- `classifier/artifacts/model.pt`
-- `classifier/artifacts/vocab.json`
-- `classifier/artifacts/meta.json`
+- `src/classifier/artifacts/model.pt`
+- `src/classifier/artifacts/vocab.json`
+- `src/classifier/artifacts/meta.json`
 
 ## 设计说明
 

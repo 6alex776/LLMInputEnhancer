@@ -1,0 +1,24 @@
+{"text":"The content is mostly correct, but the tone still feels too casual.","label":"polish"}
+{"text":"The paragraph is understandable, yet some wording sounds repetitive and awkward.","label":"polish"}
+{"text":"This email draft is complete, though it could read more smoothly and professionally.","label":"polish"}
+{"text":"The wording is acceptable, but the overall expression is not polished enough.","label":"polish"}
+{"text":"Please review the document before the meeting starts.","label":"translate"}
+{"text":"The patch has already been deployed to production.","label":"translate"}
+{"text":"We should finish the final check before noon.","label":"translate"}
+{"text":"This feature is disabled by default in the current release.","label":"translate"}
+{"text":"Need a longer version","label":"expand"}
+{"text":"Add more details here","label":"expand"}
+{"text":"Too short right now","label":"expand"}
+{"text":"Please expand this note","label":"expand"}
+{"text":"The report explains progress, blockers, and next steps in enough detail, but it is still too long for a quick update.","label":"summarize"}
+{"text":"This draft covers background, implementation, and risks well, yet it should be shortened before sharing more widely.","label":"summarize"}
+{"text":"The current memo contains several useful points, but it is too detailed for an executive summary.","label":"summarize"}
+{"text":"The weekly note is informative and complete, although it needs to be compressed for faster reading.","label":"summarize"}
+{"text":"这段内容表达清晰，但读起来还不够顺。","label":"polish"}
+{"text":"这封邮件已经完整，不过语气略显随意。","label":"polish"}
+{"text":"请在发布前再次确认配置项。","label":"translate"}
+{"text":"今晚十点之后开始部署。","label":"translate"}
+{"text":"再补充一点","label":"expand"}
+{"text":"写详细点","label":"expand"}
+{"text":"这份说明包含背景和结论，信息完整，但更适合缩短后再发。","label":"summarize"}
+{"text":"当前汇报把进度和风险都写进去了，不过篇幅还是太长。","label":"summarize"}

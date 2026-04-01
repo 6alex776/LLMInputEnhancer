@@ -2,5 +2,8 @@
   "local_url": "http://127.0.0.1:8080/",
   "local_model": "Qwen3.5-0.8B-IQ4_NL.gguf",
   "temperature": 0.6,
-  "max_tokens": 1024
+  "max_tokens": 1024,
+  "enable_classifier_recommendation": false,
+  "auto_classify_execute_threshold": 0.75,
+  "auto_classify_recommend_threshold": 0.5
 }

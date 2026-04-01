@@ -7,10 +7,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from PySide6.QtCore import QObject, QPoint, Qt, Signal
+from PySide6.QtCore import QEvent, QObject, QPoint, Qt, Signal
 from PySide6.QtGui import QAction, QCursor, QMouseEvent
 from PySide6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QDialog,
     QDoubleSpinBox,
     QFormLayout,
@@ -101,6 +102,8 @@ class CommandPanel(QWidget):
         self.custom_input = QLineEdit()
         self.custom_input.setPlaceholderText("输入你的处理指令，例如：改成更正式的商务邮件语气")
         self.custom_input.returnPressed.connect(self._emit_custom_task)
+        # 自定义输入框需要保留正常编辑能力，只拦截少量面板级快捷键。
+        self.custom_input.installEventFilter(self)
 
         run_button = QPushButton("执行")
         run_button.clicked.connect(self._emit_custom_task)
@@ -192,7 +195,6 @@ class CommandPanel(QWidget):
         self.show()
         self.raise_()
         self.activateWindow()
-        self.grabKeyboard()
         self.custom_input.setFocus()
 
     def _emit_custom_task(self, *_args) -> None:
@@ -225,14 +227,39 @@ class CommandPanel(QWidget):
 
         super().keyPressEvent(event)
 
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # type: ignore[override]
+        """让输入框保留退格/删除等编辑行为，同时支持面板级快捷键。"""
+        if watched is self.custom_input and event.type() == QEvent.KeyPress:
+            key_event = event
+            key = key_event.key()
+
+            if key == Qt.Key_Escape:
+                self.hide()
+                return True
+
+            # 只有在输入框为空时，才把数字键当作快捷任务；否则优先当作普通输入。
+            if not self.custom_input.text() and key_event.modifiers() == Qt.NoModifier:
+                key_to_task = {
+                    Qt.Key_1: "polish",
+                    Qt.Key_2: "translate",
+                    Qt.Key_3: "expand",
+                    Qt.Key_4: "summarize",
+                }
+                task = key_to_task.get(key)
+                if task:
+                    self.task_requested.emit(task, "")
+                    self.hide()
+                    return True
+
+        return super().eventFilter(watched, event)
+
     def focusOutEvent(self, event):  # type: ignore[override]
         """失去焦点自动关闭，减少对输入流程干扰。"""
         self.hide()
         super().focusOutEvent(event)
 
     def hideEvent(self, event):  # type: ignore[override]
-        """面板关闭时释放键盘占用。"""
-        self.releaseKeyboard()
+        """面板关闭时重置拖动状态。"""
         self._drag_active = False
         super().hideEvent(event)
 
@@ -267,11 +294,17 @@ class SettingsDialog(QDialog):
 
     settings_saved = Signal(dict)
 
-    def __init__(self, config: dict[str, Any], parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        config: dict[str, Any],
+        classifier_status_text: str = "",
+        parent: QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
         self.setWindowTitle("LLM 输入增强设置")
         self.setModal(True)
         self.setMinimumWidth(540)
+        self._classifier_status_text = classifier_status_text
         self._build_ui()
         self.load_config(config)
 
@@ -292,10 +325,16 @@ class SettingsDialog(QDialog):
         self.max_tokens_spin = QSpinBox()
         self.max_tokens_spin.setRange(32, 8192)
 
+        self.enable_classifier_checkbox = QCheckBox("启用智能任务分类推荐")
+        self.classifier_status_label = QLabel()
+        self.classifier_status_label.setWordWrap(True)
+
         form.addRow("本地服务地址", self.local_url_input)
         form.addRow("本地模型名称", self.local_model_input)
         form.addRow("Temperature", self.temperature_spin)
         form.addRow("Max Tokens", self.max_tokens_spin)
+        form.addRow("", self.enable_classifier_checkbox)
+        form.addRow("分类器状态", self.classifier_status_label)
 
         root_layout.addLayout(form)
 
@@ -317,6 +356,8 @@ class SettingsDialog(QDialog):
         self.local_model_input.setText(str(config.get("local_model", "")))
         self.temperature_spin.setValue(float(config.get("temperature", 0.2)))
         self.max_tokens_spin.setValue(int(config.get("max_tokens", 1024)))
+        self.enable_classifier_checkbox.setChecked(bool(config.get("enable_classifier_recommendation", True)))
+        self.classifier_status_label.setText(self._classifier_status_text or "未提供分类器运行时状态。")
 
     def collect_settings(self) -> dict[str, Any]:
         """读取界面输入并组装配置字典。"""
@@ -325,6 +366,7 @@ class SettingsDialog(QDialog):
             "local_model": self.local_model_input.text().strip(),
             "temperature": float(self.temperature_spin.value()),
             "max_tokens": int(self.max_tokens_spin.value()),
+            "enable_classifier_recommendation": self.enable_classifier_checkbox.isChecked(),
         }
 
     def _on_save_clicked(self, *_args) -> None:

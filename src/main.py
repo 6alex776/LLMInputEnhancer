@@ -12,7 +12,9 @@ import traceback
 from PySide6.QtCore import QSharedMemory, QThread, Qt, Signal
 from PySide6.QtWidgets import QApplication, QMessageBox
 
+from app_info import APP_DISPLAY_NAME, APP_TITLE, APP_VERSION
 from app_logger import get_logger, setup_logging
+from classifier import TextClassifierRuntime
 from clipboard_manager import ClipboardManager, StreamEditSession
 from config import ConfigManager
 from hotkey_listener import HotkeyListener
@@ -34,8 +36,8 @@ logger = get_logger("main")
 class TextProcessThread(QThread):
     """后台处理线程：获取文本、调用 LLM、输出结果。"""
 
-    STREAM_FLUSH_INTERVAL = 0.05 #返回时间阈值
-    STREAM_FLUSH_CHARS = 6 #返回字符阈值
+    STREAM_FLUSH_INTERVAL = 0.05
+    STREAM_FLUSH_CHARS = 6
     STREAM_FLUSH_ENDINGS = (" ", "\n", "\t", ",", ".", "!", "?", ";", ":", "，", "。", "！", "？", "；", "：")
 
     success = Signal(str)
@@ -64,9 +66,19 @@ class TextProcessThread(QThread):
                 raise ValueError("未检测到选中文本，请先选中内容后再触发快捷键。")
 
             session = self.clipboard_manager.create_stream_session(text)
+            live_writeback = self.clipboard_manager.supports_live_stream_writeback(session)
             result_parts: list[str] = []
             pending_parts: list[str] = []
             last_flush = time.monotonic()
+
+            if live_writeback:
+                logger.info("当前目标支持流式写回：strategy=%s class=%s", session.strategy, session.class_name or "unknown")
+            else:
+                logger.info(
+                    "当前目标已降级为完成后粘贴：strategy=%s class=%s",
+                    session.strategy,
+                    session.class_name or "unknown",
+                )
 
             for chunk in self.llm_client.stream_generate(
                 task_type=self.task_type,
@@ -81,12 +93,13 @@ class TextProcessThread(QThread):
                 pending_parts.append(chunk)
                 pending_text = "".join(pending_parts)
                 now = time.monotonic()
-                if self._should_flush_pending(pending_text, now - last_flush):
+                # 流式输出先在内存中缓冲，再按时间片/长度批量写回，避免外部输入框高频抖动。
+                if live_writeback and self._should_flush_pending(pending_text, now - last_flush):
                     self.clipboard_manager.append_stream_text(session, pending_text)
                     pending_parts.clear()
                     last_flush = now
 
-            if pending_parts:
+            if live_writeback and pending_parts:
                 pending_text = "".join(pending_parts)
                 self.clipboard_manager.append_stream_text(session, pending_text)
 
@@ -94,10 +107,11 @@ class TextProcessThread(QThread):
             if not result:
                 raise LLMClientError("模型返回为空，未执行替换。")
 
-            if session.started:
+            if live_writeback and session.started:
                 self.clipboard_manager.finish_stream_session(session)
             else:
-                self.clipboard_manager.paste_text(result)
+                # 非标准输入框统一降级为“完整生成后一次性粘贴”，优先保证兼容性。
+                self.clipboard_manager.paste_text_to_session(session, result)
 
             logger.info(
                 "后台任务完成：task=%s source=%s input_length=%s output_length=%s",
@@ -106,7 +120,7 @@ class TextProcessThread(QThread):
                 len(text),
                 len(result),
             )
-            self.success.emit(f"{TASK_NAME_MAP.get(self.task_type, '文本处理')}完成（来源：{source}）。")
+            self.success.emit(f"{TASK_NAME_MAP.get(self.task_type, '文本处理')}完成。")
         except Exception as exc:
             restored = False
             if session is not None:
@@ -162,6 +176,7 @@ class AppController:
         self.config_manager = ConfigManager()
         self.clipboard_manager = ClipboardManager()
         self.llm_client = LLMClient(self.config_manager)
+        self.task_classifier = TextClassifierRuntime()
 
         self.command_panel = CommandPanel()
         self.tray = AppTray()
@@ -201,10 +216,11 @@ class AppController:
         active_map = self.hotkey_listener.get_active_hotkey_map()
         logger.info("热键注册结果：%s", active_map)
         self.tray.show_info(
-            "LLM 输入增强",
+            APP_TITLE,
             (
-                "程序已启动。"
+                f"程序已启动（{APP_VERSION}）。"
                 f"面板:{active_map.get('show_panel', '未注册')} "
+                f"智能判断:{active_map.get('auto_classify', '未注册')} "
                 f"润色:{active_map.get('quick_polish', '未注册')} "
                 f"翻译:{active_map.get('quick_translate', '未注册')} "
                 f"扩写:{active_map.get('quick_expand', '未注册')} "
@@ -218,18 +234,17 @@ class AppController:
         if hotkey_name == "show_panel":
             self.show_command_panel()
             return
-        if hotkey_name == "quick_polish":
-            self.start_task("polish", "")
-            return
-        if hotkey_name == "quick_translate":
-            self.start_task("translate", "")
-            return
-        if hotkey_name == "quick_expand":
-            self.start_task("expand", "")
-            return
-        if hotkey_name == "quick_summarize":
-            self.start_task("summarize", "")
-            return
+
+        quick_actions = {
+            "auto_classify": self.auto_classify_and_run,
+            "quick_polish": lambda: self.start_task("polish", ""),
+            "quick_translate": lambda: self.start_task("translate", ""),
+            "quick_expand": lambda: self.start_task("expand", ""),
+            "quick_summarize": lambda: self.start_task("summarize", ""),
+        }
+        action = quick_actions.get(hotkey_name)
+        if action is not None:
+            action()
 
     def show_command_panel(self) -> None:
         """显示指令面板。"""
@@ -239,7 +254,10 @@ class AppController:
     def show_settings(self) -> None:
         """打开设置窗口。"""
         logger.info("打开设置窗口。")
-        dialog = SettingsDialog(self.config_manager.all())
+        dialog = SettingsDialog(
+            self.config_manager.all(),
+            classifier_status_text=self.task_classifier.get_status_text(),
+        )
         dialog.settings_saved.connect(self._save_settings)
         dialog.exec()
 
@@ -248,6 +266,59 @@ class AppController:
         self.config_manager.update(patch)
         logger.info("设置保存成功。")
         self.tray.show_info("设置已保存", "新的 LLM 配置将在下一次调用时生效。")
+
+    def auto_classify_and_run(self) -> None:
+        """Alt+A：自动判断任务，高置信度直接执行。"""
+        if self.worker and self.worker.isRunning():
+            self.tray.show_info("处理中", "上一个任务仍在执行，请稍候。")
+            return
+
+        if not bool(self.config_manager.get("enable_classifier_recommendation", True)):
+            self.tray.show_warning("智能判断已关闭", "可在设置中重新启用智能任务分类推荐。")
+            return
+
+        if not self.task_classifier.available:
+            self.tray.show_warning("分类器未就绪", self.task_classifier.get_status_text())
+            return
+
+        text, _, source = self.clipboard_manager.get_selected_text()
+        if not text:
+            self.tray.show_warning("未检测到选中文本", "请先选中文本，再按 Alt+A。")
+            return
+
+        result = self.task_classifier.predict(text)
+        if result is None:
+            self.tray.show_warning("智能判断失败", "当前文本太短或分类器不可用，请手动选择任务。")
+            return
+
+        execute_threshold = float(self.config_manager.get("auto_classify_execute_threshold", 0.75))
+        recommend_threshold = float(self.config_manager.get("auto_classify_recommend_threshold", 0.50))
+        logger.info(
+            "自动分类完成：task=%s confidence=%.3f source=%s",
+            result.task_type,
+            result.confidence,
+            source,
+        )
+
+        # 高置信度直接执行；置信度不足时只提示，不强行替用户做决定。
+        if result.confidence >= execute_threshold:
+            self.tray.show_info(
+                "智能判断",
+                f"已判断为{TASK_NAME_MAP.get(result.task_type, result.task_type)}（{result.confidence:.0%}），开始执行。",
+            )
+            self.start_task(result.task_type, "")
+            return
+
+        if result.confidence >= recommend_threshold:
+            self.tray.show_info(
+                "智能判断",
+                f"推荐使用{TASK_NAME_MAP.get(result.task_type, result.task_type)}（{result.confidence:.0%}），未自动执行。",
+            )
+        else:
+            self.tray.show_warning(
+                "智能判断不确定",
+                f"当前最高分类为{TASK_NAME_MAP.get(result.task_type, result.task_type)}（{result.confidence:.0%}），未自动执行。",
+            )
 
     def start_task(self, task_type: str, custom_instruction: str = "") -> None:
         """启动后台线程执行文本处理。"""
@@ -394,7 +465,7 @@ def main() -> int:
     """应用启动入口。"""
     log_file = setup_logging()
     sys.excepthook = handle_uncaught_exception
-    logger.info("程序启动。日志文件：%s", log_file)
+    logger.info("程序启动：name=%s version=%s log_file=%s", APP_DISPLAY_NAME, APP_VERSION, log_file)
 
     QApplication.setHighDpiScaleFactorRoundingPolicy(
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough

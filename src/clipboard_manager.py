@@ -239,7 +239,9 @@ class ClipboardManager:
         lowered = class_name.strip().lower()
         if lowered == "edit" or lowered.startswith("richedit"):
             return "direct_message"
-        return "send_input"
+        # 现代浏览器/Electron/聊天软件的输入框通常不稳定支持逐段模拟输入，
+        # 对这些控件统一降级为“生成完成后一次性粘贴”，优先保证最终可用性。
+        return "paste_on_finish"
 
     def create_stream_session(self, original_text: str) -> StreamEditSession:
         """创建流式写回会话，但暂不修改目标输入框。"""
@@ -275,8 +277,10 @@ class ClipboardManager:
             raw_selection = int(win32gui.SendMessage(session.target_hwnd, EM_GETSEL, 0, 0))
             session.selection_start = raw_selection & 0xFFFF
             win32gui.SendMessage(session.target_hwnd, EM_REPLACESEL, True, "")
-        else:
+        elif session.strategy == "send_input":
             self._send_virtual_key(win32con.VK_DELETE)
+        else:
+            raise RuntimeError(f"当前写回策略不支持流式启动：{session.strategy}")
 
         session.started = True
         logger.info("流式写回会话已启动：strategy=%s target_hwnd=%s", session.strategy, session.target_hwnd)
@@ -293,8 +297,10 @@ class ClipboardManager:
 
         if session.strategy == "direct_message":
             win32gui.SendMessage(session.target_hwnd, EM_REPLACESEL, True, chunk)
-        else:
+        elif session.strategy == "send_input":
             self._send_unicode_text(chunk)
+        else:
+            raise RuntimeError(f"当前写回策略不支持流式追加：{session.strategy}")
 
         session.injected_text += chunk
         session.flush_count += 1
@@ -334,6 +340,17 @@ class ClipboardManager:
         except Exception:
             logger.exception("流式写回恢复原文本失败。")
             return False
+
+    def supports_live_stream_writeback(self, session: StreamEditSession) -> bool:
+        """判断当前目标控件是否适合逐段流式写回。"""
+        # 目前仅对标准 Edit/RichEdit 保留真正流式写回。
+        # 其余控件统一走“生成完成后一次性粘贴”，优先保证兼容性。
+        return session.strategy == "direct_message"
+
+    def paste_text_to_session(self, session: StreamEditSession, text: str) -> None:
+        """在确认焦点仍然正确后，对原目标执行一次性粘贴。"""
+        self._ensure_target_ready(session)
+        self.paste_text(text)
 
     def _ensure_target_ready(self, session: StreamEditSession) -> None:
         """确认写回目标仍然是原来的输入框。"""

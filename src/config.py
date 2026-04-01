@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import threading
 from pathlib import Path
+import sys
 from typing import Any
 from urllib.parse import urlparse
 
@@ -22,6 +23,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "local_model": "Qwen3.5-0.8B-IQ4_NL.gguf",
     "temperature": 0.6,
     "max_tokens": 1024,
+    "enable_classifier_recommendation": True,
+    "auto_classify_execute_threshold": 0.75,
+    "auto_classify_recommend_threshold": 0.50,
 }
 
 
@@ -29,7 +33,11 @@ class ConfigManager:
     """应用配置管理器。"""
 
     def __init__(self, config_path: str | Path | None = None) -> None:
-        base_dir = Path(__file__).resolve().parent
+        base_dir = (
+            Path(sys.executable).resolve().parent
+            if getattr(sys, "frozen", False)
+            else Path(__file__).resolve().parent.parent
+        )
         self.config_path = Path(config_path) if config_path else base_dir / "config.json"
         self._lock = threading.RLock()
         self._config: dict[str, Any] = DEFAULT_CONFIG.copy()
@@ -98,6 +106,8 @@ class ConfigManager:
             migrated["local_url"] = migrated.get("ollama_url", "")
         if "local_model" not in migrated and "ollama_model" in migrated:
             migrated["local_model"] = migrated.get("ollama_model", "")
+        if "enable_classifier_recommendation" not in migrated and "enable_torch_recommendation" in migrated:
+            migrated["enable_classifier_recommendation"] = bool(migrated.get("enable_torch_recommendation"))
 
         migrated.pop("provider", None)
         migrated.pop("doubao_api_key", None)
@@ -105,6 +115,7 @@ class ConfigManager:
         migrated.pop("doubao_endpoint", None)
         migrated.pop("ollama_url", None)
         migrated.pop("ollama_model", None)
+        migrated.pop("enable_torch_recommendation", None)
         return migrated
 
 

@@ -1,0 +1,22 @@
+{
+  "model_name": "HybridTextCNN",
+  "max_length": 128,
+  "embedding_dim": 96,
+  "num_filters": 64,
+  "kernel_sizes": [
+    2,
+    3,
+    4,
+    5
+  ],
+  "extra_feature_dim": 8,
+  "hidden_dim": 64,
+  "dropout": 0.3,
+  "num_classes": 4,
+  "labels": [
+    "polish",
+    "translate",
+    "expand",
+    "summarize"
+  ]
+}

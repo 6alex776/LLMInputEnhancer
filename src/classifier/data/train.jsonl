@@ -1,0 +1,64 @@
+{"text":"The message is understandable, but the wording feels awkward and repetitive.","label":"polish"}
+{"text":"This update note has the right facts, yet the tone is too casual for a client.","label":"polish"}
+{"text":"The paragraph is complete, but the sentence flow is not smooth enough.","label":"polish"}
+{"text":"We already fixed the issue, although the wording in the release note still needs refinement.","label":"polish"}
+{"text":"The email says the right thing, but it sounds too direct and not very polished.","label":"polish"}
+{"text":"This summary is accurate, but several phrases read a bit stiff and unnatural.","label":"polish"}
+{"text":"The explanation is useful, however the current phrasing makes it harder to read quickly.","label":"polish"}
+{"text":"The report is mostly fine, but a few long sentences should be cleaned up.","label":"polish"}
+{"text":"The content is correct, yet the overall style is not formal enough for business communication.","label":"polish"}
+{"text":"This paragraph contains the right information, but it would benefit from clearer grammar.","label":"polish"}
+{"text":"The document is complete, though the wording still feels rough in a few places.","label":"polish"}
+{"text":"The statement is clear enough, but the expression could be more natural and professional.","label":"polish"}
+{"text":"The server restarted at 2 a.m. last night.","label":"translate"}
+{"text":"Please confirm whether we can launch as planned.","label":"translate"}
+{"text":"This file needs to be renamed before submission.","label":"translate"}
+{"text":"The final version should be sent to my email today.","label":"translate"}
+{"text":"Our QA team has already reproduced the bug twice.","label":"translate"}
+{"text":"The deployment will begin at 10 p.m. tonight.","label":"translate"}
+{"text":"Please keep the original formatting when editing the content.","label":"translate"}
+{"text":"The payment request was created successfully.","label":"translate"}
+{"text":"This change will not affect existing user data.","label":"translate"}
+{"text":"The current build failed because the environment variable was missing.","label":"translate"}
+{"text":"We need to confirm the schedule with the client this afternoon.","label":"translate"}
+{"text":"The attachment was missing from the previous email.","label":"translate"}
+{"text":"Need more details","label":"expand"}
+{"text":"Add some context","label":"expand"}
+{"text":"Too brief","label":"expand"}
+{"text":"Draft not enough","label":"expand"}
+{"text":"Meeting notes","label":"expand"}
+{"text":"Write a fuller version","label":"expand"}
+{"text":"Current plan only","label":"expand"}
+{"text":"Expand this point","label":"expand"}
+{"text":"Need examples","label":"expand"}
+{"text":"More explanation needed","label":"expand"}
+{"text":"Short idea only","label":"expand"}
+{"text":"Please make it more complete","label":"expand"}
+{"text":"This week we completed the first stage of development. The login flow is now simpler, the search API is connected, and the export feature mostly works. We still need better error handling before release.","label":"summarize"}
+{"text":"The meeting covered timeline, staffing, and testing readiness. We agreed to keep the current deadline, borrow one more backend engineer for two days, and let QA focus on the payment flow first.","label":"summarize"}
+{"text":"Our team finished the initial implementation this week. The core API is available, client integration has started, and QA has begun writing regression cases. The remaining risk is still the unresolved backend field mapping.","label":"summarize"}
+{"text":"The current report includes progress updates, blocker analysis, dependency status, and the proposed next steps. It is useful for internal tracking, but it is too detailed for a short status update.","label":"summarize"}
+{"text":"This proposal explains the background, rollout plan, and major risks in detail. It is informative and well structured, but much longer than what is needed for a quick executive summary.","label":"summarize"}
+{"text":"Yesterday we reviewed the draft together. It covered context, implementation details, risks, and rollout considerations, but it took too long to read and should be condensed into a shorter version.","label":"summarize"}
+{"text":"The document contains all the key information, including goals, workflow changes, edge cases, and follow-up actions. It is comprehensive, yet it should be compressed before sharing with a broader audience.","label":"summarize"}
+{"text":"This weekly update includes project status, support feedback, technical risks, and next-week planning. The information is complete, but the current version is too long for readers who only need the highlights.","label":"summarize"}
+{"text":"The release note not only lists the fixes, but also explains impact scope, verification steps, and rollout timing. It is helpful, although it should be shortened for a quick external summary.","label":"summarize"}
+{"text":"The write-up first explains the problem, then expands on root cause, solution, validation, and next steps. It is detailed and clear, but still too long for a compact update.","label":"summarize"}
+{"text":"This project memo combines development progress, coordination status, unresolved questions, and planned milestones. It works as a record, but it needs to be reduced before being shared upward.","label":"summarize"}
+{"text":"The latest internal note is rich in detail and includes several examples and repeated explanations. For most readers, the same information should be delivered in a much shorter form.","label":"summarize"}
+{"text":"这段说明整体没错，只是语句有些生硬。","label":"polish"}
+{"text":"这封邮件信息完整，不过语气还不够正式。","label":"polish"}
+{"text":"目前这段文案能看懂，但表达不够自然。","label":"polish"}
+{"text":"这份回复意思清楚，只是措辞还可以更顺畅点。","label":"polish"}
+{"text":"请在今天下班前提交最终版本。","label":"translate"}
+{"text":"明天上午的会议改到三号会议室。","label":"translate"}
+{"text":"这个接口目前只支持查询功能。","label":"translate"}
+{"text":"如果测试通过，我们今晚就可以发布。","label":"translate"}
+{"text":"补充背景","label":"expand"}
+{"text":"再展开一点","label":"expand"}
+{"text":"内容太短","label":"expand"}
+{"text":"补几个例子","label":"expand"}
+{"text":"这份方案文档先介绍背景，再说明流程、风险和上线安排，信息很完整，但篇幅偏长，更适合压缩后再同步。","label":"summarize"}
+{"text":"本周工作涉及登录优化、接口联调和导出功能收尾，整体进度正常，但还需补充一轮回归测试。","label":"summarize"}
+{"text":"最近用户反馈主要集中在页面加载慢和按钮不够直观两个问题，后续需要优先优化引导和交互提示。","label":"summarize"}
+{"text":"这份周报包含进度、风险和下周计划，内容全面，但如果发给管理层，最好先提炼重点。","label":"summarize"}
