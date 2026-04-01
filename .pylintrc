@@ -1,0 +1,17 @@
+[MASTER]
+disable =
+    E0611, 
+    E0401,  
+    C0103,  
+    C0301,  
+    R0903,  
+    R0902,  
+    R0911,  
+    R0912,  
+    R0914,  
+    R0915,  
+    W0718   
+
+[TYPECHECK]
+# 专门忽略PySide6的所有导入和成员检查
+ignored-modules = PySide6.QtCore, PySide6.QtGui, PySide6.QtWidgets
