@@ -1,6 +1,6 @@
 # LLMInputEnhancer
 
-当前版本：`v0.2.0-beta`
+当前版本：`v0.2.1-beta`
 
 一个面向 Windows 桌面输入场景的本地大模型输入增强工具。
 
